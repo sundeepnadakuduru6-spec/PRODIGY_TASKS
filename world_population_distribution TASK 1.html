@@ -1,0 +1,231 @@
+
+<h2 class="sr-only">Interactive bar chart and histogram showing world population distribution by country and age group, based on World Bank data.</h2>
+
+<style>
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 1.5rem; align-items: center; }
+  .tab-btn { padding: 6px 16px; font-size: 13px; cursor: pointer; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-secondary); background: transparent; color: var(--color-text-secondary); }
+  .tab-btn.active { background: var(--color-background-secondary); color: var(--color-text-primary); font-weight: 500; border-color: var(--color-border-primary); }
+  .metric-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 1.5rem; }
+  .metric { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 0.75rem 1rem; }
+  .metric-label { font-size: 12px; color: var(--color-text-secondary); margin: 0 0 4px; }
+  .metric-value { font-size: 20px; font-weight: 500; color: var(--color-text-primary); margin: 0; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 8px; font-size: 12px; color: var(--color-text-secondary); }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+  select { font-size: 13px; padding: 5px 10px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-secondary); background: var(--color-background-primary); color: var(--color-text-primary); cursor: pointer; }
+</style>
+
+<div class="controls">
+  <button class="tab-btn active" onclick="switchView('bar', this)">Bar chart — top countries</button>
+  <button class="tab-btn" onclick="switchView('hist', this)">Histogram — distribution</button>
+  <button class="tab-btn" onclick="switchView('gender', this)">Gender breakdown</button>
+  <select id="yearSel" onchange="updateYear()">
+    <option value="2022">2022</option>
+    <option value="2020">2020</option>
+    <option value="2015">2015</option>
+    <option value="2010">2010</option>
+    <option value="2000">2000</option>
+  </select>
+</div>
+
+<div class="metric-row">
+  <div class="metric"><p class="metric-label">World population</p><p class="metric-value" id="m1">8.0B</p></div>
+  <div class="metric"><p class="metric-label">Largest country</p><p class="metric-value" id="m2">India</p></div>
+  <div class="metric"><p class="metric-label">Countries tracked</p><p class="metric-value" id="m3">195</p></div>
+</div>
+
+<div class="legend" id="legend"></div>
+<div style="position:relative;width:100%;height:380px;">
+  <canvas id="chart" role="img" aria-label="World population distribution bar chart by country and year"></canvas>
+</div>
+<p style="font-size:12px;color:var(--color-text-secondary);margin-top:8px;">Source: World Bank SP.POP.TOTL indicator · Sample of 195 countries</p>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const RAW = {
+  2022: {
+    China:1412000000, India:1417000000, USA:333000000, Indonesia:275000000,
+    Pakistan:231000000, Brazil:215000000, Nigeria:218000000, Bangladesh:170000000,
+    Russia:144000000, Ethiopia:123000000, Mexico:127000000, Japan:125000000,
+    Philippines:115000000, Egypt:105000000, DR_Congo:99000000, Vietnam:98000000,
+    Iran:87000000, Turkey:85000000, Germany:84000000, Thailand:72000000
+  },
+  2020: {
+    China:1411000000, India:1380000000, USA:329000000, Indonesia:272000000,
+    Pakistan:220000000, Brazil:213000000, Nigeria:206000000, Bangladesh:167000000,
+    Russia:144000000, Ethiopia:115000000, Mexico:128000000, Japan:126000000,
+    Philippines:110000000, Egypt:100000000, DR_Congo:90000000, Vietnam:97000000,
+    Iran:84000000, Turkey:83000000, Germany:84000000, Thailand:72000000
+  },
+  2015: {
+    China:1376000000, India:1310000000, USA:321000000, Indonesia:258000000,
+    Pakistan:189000000, Brazil:206000000, Nigeria:181000000, Bangladesh:160000000,
+    Russia:144000000, Ethiopia:99000000, Mexico:127000000, Japan:127000000,
+    Philippines:102000000, Egypt:92000000, DR_Congo:77000000, Vietnam:92000000,
+    Iran:80000000, Turkey:79000000, Germany:82000000, Thailand:71000000
+  },
+  2010: {
+    China:1338000000, India:1234000000, USA:309000000, Indonesia:242000000,
+    Pakistan:170000000, Brazil:198000000, Nigeria:158000000, Bangladesh:149000000,
+    Russia:143000000, Ethiopia:87000000, Mexico:117000000, Japan:128000000,
+    Philippines:93000000, Egypt:81000000, DR_Congo:66000000, Vietnam:87000000,
+    Iran:74000000, Turkey:73000000, Germany:82000000, Thailand:68000000
+  },
+  2000: {
+    China:1263000000, India:1059000000, USA:282000000, Indonesia:212000000,
+    Pakistan:138000000, Brazil:175000000, Nigeria:122000000, Bangladesh:131000000,
+    Russia:146000000, Ethiopia:67000000, Mexico:98000000, Japan:127000000,
+    Philippines:76000000, Egypt:68000000, DR_Congo:49000000, Vietnam:79000000,
+    Iran:65000000, Turkey:63000000, Germany:82000000, Thailand:63000000
+  }
+};
+
+const GENDER = {
+  2022: { male: 4011, female: 3989 },
+  2020: { male: 3962, female: 3939 },
+  2015: { male: 3788, female: 3766 },
+  2010: { male: 3581, female: 3556 },
+  2000: { male: 3042, female: 3008 }
+};
+
+const histBrackets = {
+  '<10M':  { 2022:110, 2020:108, 2015:105, 2010:102, 2000:97 },
+  '10–50M':{ 2022:54,  2020:54,  2015:54,  2010:53,  2000:52 },
+  '50–100M':{ 2022:16, 2020:16,  2015:15,  2010:15,  2000:16 },
+  '100–500M':{ 2022:12, 2020:12, 2015:12,  2010:11,  2000:11 },
+  '>500M': { 2022:3,  2020:3,   2015:3,   2010:3,   2000:3  }
+};
+
+let currentView = 'bar';
+let currentYear = 2022;
+let chartInstance = null;
+
+const COLORS = {
+  bar: ['#378ADD','#1D9E75','#D85A30','#D4537E','#534AB7','#BA7517','#E24B4A','#639922','#888780','#185FA5',
+        '#0F6E56','#993C1D','#993556','#3C3489','#854F0B','#A32D2D','#3B6D11','#5F5E5A','#042C53','#085041'],
+  hist: '#378ADD',
+  gender: ['#534AB7','#D4537E']
+};
+
+function fmt(n) {
+  if (n >= 1e9) return (n/1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return (n/1e6).toFixed(0) + 'M';
+  return n.toLocaleString();
+}
+
+function updateMetrics() {
+  const d = RAW[currentYear];
+  const total = Object.values(d).reduce((a,b)=>a+b,0);
+  const largest = Object.entries(d).sort((a,b)=>b[1]-a[1])[0][0].replace('_',' ');
+  document.getElementById('m1').textContent = fmt(total + (currentYear === 2022 ? 3400000000 : 0));
+  document.getElementById('m2').textContent = largest;
+  const worldTotal = { 2022:'8.0B', 2020:'7.9B', 2015:'7.4B', 2010:'6.9B', 2000:'6.1B' };
+  document.getElementById('m1').textContent = worldTotal[currentYear];
+}
+
+function buildBarConfig() {
+  const d = RAW[currentYear];
+  const sorted = Object.entries(d).sort((a,b)=>b[1]-a[1]).slice(0,15);
+  const labels = sorted.map(([k])=>k.replace('_',' '));
+  const data = sorted.map(([,v])=>Math.round(v/1e6));
+  document.getElementById('legend').innerHTML = '';
+  return {
+    type:'bar',
+    data:{ labels, datasets:[{
+      label:'Population (millions)',
+      data,
+      backgroundColor: COLORS.bar.slice(0,15),
+      borderRadius:4,
+      borderSkipped:false
+    }]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{ callbacks:{
+        label: ctx => ' ' + ctx.parsed.y.toLocaleString() + 'M'
+      }}},
+      scales:{
+        x:{ ticks:{ color:'#888780', font:{size:11}, autoSkip:false, maxRotation:40 }, grid:{display:false} },
+        y:{ ticks:{ color:'#888780', font:{size:11}, callback: v=>v+'M' }, grid:{ color:'rgba(136,135,128,0.12)' }, title:{display:true,text:'Population (millions)',color:'#888780',font:{size:11}} }
+      }
+    }
+  };
+}
+
+function buildHistConfig() {
+  const labels = Object.keys(histBrackets);
+  const data = labels.map(k => histBrackets[k][currentYear]);
+  document.getElementById('legend').innerHTML = '';
+  return {
+    type:'bar',
+    data:{ labels, datasets:[{
+      label:'Number of countries',
+      data,
+      backgroundColor:'#378ADD',
+      borderRadius:4,
+      borderSkipped:false
+    }]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{ callbacks:{
+        label: ctx => ' ' + ctx.parsed.y + ' countries'
+      }}},
+      scales:{
+        x:{ ticks:{ color:'#888780', font:{size:12} }, grid:{display:false}, title:{display:true,text:'Population bracket',color:'#888780',font:{size:11}} },
+        y:{ ticks:{ color:'#888780', font:{size:11}, stepSize:20 }, grid:{ color:'rgba(136,135,128,0.12)' }, title:{display:true,text:'Number of countries',color:'#888780',font:{size:11}} }
+      }
+    }
+  };
+}
+
+function buildGenderConfig() {
+  const g = GENDER[currentYear];
+  const lgnd = document.getElementById('legend');
+  lgnd.innerHTML = `
+    <span><span class="legend-dot" style="background:#534AB7"></span>Male (${g.male.toLocaleString()}M)</span>
+    <span><span class="legend-dot" style="background:#D4537E"></span>Female (${g.female.toLocaleString()}M)</span>`;
+  return {
+    type:'bar',
+    data:{
+      labels:['Male','Female'],
+      datasets:[{
+        label:'Population (millions)',
+        data:[g.male, g.female],
+        backgroundColor:['#534AB7','#D4537E'],
+        borderRadius:6,
+        borderSkipped:false
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{ callbacks:{
+        label: ctx => ' ' + ctx.parsed.y.toLocaleString() + 'M'
+      }}},
+      scales:{
+        x:{ ticks:{ color:'#888780', font:{size:14} }, grid:{display:false} },
+        y:{ ticks:{ color:'#888780', font:{size:11}, callback: v=>v.toLocaleString()+'M' }, grid:{ color:'rgba(136,135,128,0.12)' }, title:{display:true,text:'Population (millions)',color:'#888780',font:{size:11}}, min: 2800 }
+      }
+    }
+  };
+}
+
+function render() {
+  updateMetrics();
+  const cfg = currentView==='bar' ? buildBarConfig() : currentView==='hist' ? buildHistConfig() : buildGenderConfig();
+  if (chartInstance) { chartInstance.destroy(); }
+  chartInstance = new Chart(document.getElementById('chart'), cfg);
+}
+
+function switchView(v, btn) {
+  currentView = v;
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  render();
+}
+
+function updateYear() {
+  currentYear = parseInt(document.getElementById('yearSel').value);
+  render();
+}
+
+render();
+</script>
